@@ -1,0 +1,38 @@
+title: Copy Scale
+category: Bone Constraints
+properties:
+  - name: target
+    description: Object this both maps scale to.
+    schema:
+      type: node
+      required: true
+  - name: axes
+    description: Axes that scale constrains.
+    schema:
+      type: object
+      properties:
+        xAxis:
+          type: bool
+        yAxis:
+          type: bool
+        zAxis:
+          type: bool
+  - name: offset
+    description: Whether or not to maintain current scale.
+    schema:
+      type: bool
+      default: false
+  - name: power
+    description: Multiplier to scale against target.
+    schema:
+      type: float
+      minimum: 0
+      maximum: 1
+      default: 1
+  - name: influence
+    description: Envelope to normalize toggling the scale.
+    schema:
+      type: float
+      minimum: 0
+      maximum: 1
+      default: 1
