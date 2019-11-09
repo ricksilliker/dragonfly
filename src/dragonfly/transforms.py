@@ -7,6 +7,25 @@ from maya import cmds
 LOG = logging.getLogger(__name__)
 
 
+def getParent(node):
+    """Get the first available parent transform.
+
+    Returns:
+        OpenMaya.MObject
+    """
+    dagNode = OpenMaya.MFnDagNode(node)
+    
+    if dagNode.parentCount() == 0:
+        return
+
+    parent = dagNode.parent(0)
+
+    if not parent.hasFn(OpenMaya.MFn.kTransform):
+        return
+
+    return parent
+
+
 def getParentNodes(nodes):
     """Given a list of nodes, returns the top-most level nodes of the list.
 

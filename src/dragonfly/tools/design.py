@@ -107,10 +107,69 @@ class GeneralToolsWidget(QtWidgets.QWidget):
         OpenMaya.MGlobal.setActiveSelectionList(selectionList)
 
     def freezePivots(self):
-        pass
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+
+        for index in range(selectionList.length()):
+            dagPath = selectionList.getDagPath(index)
+            nodeTransform = OpenMaya.MFnTransform(dagPath)
+            pos = nodeTransform.rotatePivot(OpenMaya.MSpace.kWorld)
+            LOG.info([pos.x, pos.y, pos.z])
+
+            nodeTransform.setTranslation(OpenMaya.MVector.kZeroVector, OpenMaya.MSpace.kObject)
+
+            src = nodeTransform.rotatePivot(OpenMaya.MSpace.kWorld)
+
+            parent = OpenMaya.MFnDagNode(dagPath).parent(0)
+            if not parent.hasFn(OpenMaya.MFn.kTransform):
+                dst = OpenMaya.MPoint(OpenMaya.MVector.kZeroVector)
+            else:
+                parentPath = OpenMaya.MFnDagNode(parent).getPath()
+                dst = OpenMaya.MFnTransform(parentPath).rotatePivot(OpenMaya.MSpace.kWorld)
+
+            nodeTransform.setTranslation(dst - src, OpenMaya.MSpace.kObject)
+
+            cmds.makeIdentity(dagPath.fullPathName(), a=True, t=True)
+
+            nodeTransform.setTranslation(OpenMaya.MVector(pos), OpenMaya.MSpace.kWorld)
+
+            # cmds.move(
+            #     pos.x,
+            #     pos.y,
+            #     pos.z,
+            #     dagPath.fullPathName(),
+            #     ws=True,
+            #     a=True
+            # )
+
 
     def parentSelected(self):
-        pass
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+
+        if selectionList.length() == 0:
+            return
+
+        nodeNames = list(selectionList.getSelectionStrings())
+        parent = selectionList.getDependNode(0)
+
+        conflicts = []
+        for index in range(1, selectionList.length()):
+            node = selectionList.getDependNode(index)
+            if OpenMaya.MFnDagNode(parent).hasParent(node):
+                conflicts.append(node)
+    
+        if conflicts:
+            tops = transforms.getParentNodes(conflicts)
+            newParentParent = OpenMaya.MFnDagNode(transforms.getParent(tops[0]))
+            cmds.parent(nodeNames[0], newParentParent.fullPathName())
+
+        parent = nodeNames.pop(0)
+        nodeNames.append(parent)
+
+        try:
+            cmds.parent(*nodeNames)
+        except RuntimeError as err:
+            LOG.exception('Parent relationship already setup.')
+
 
     def createOffset(self):
         selectionList = OpenMaya.MGlobal.getActiveSelectionList()
@@ -139,7 +198,16 @@ class GeneralToolsWidget(QtWidgets.QWidget):
             cmds.parent(nodePath.fullPathName(), offsetPath.fullPathName())
 
     def parentSelectedInOrder(self):
-        pass
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+        nodeNames = selectionList.getSelectionStrings()
+
+        for nodeName in nodeNames:
+            cmds.parent(nodeName, world=True)
+
+        for index in reversed(range(1, selectionList.length())):
+            parent = nodeNames[index - 1] 
+            child = nodeNames[index]
+            cmds.parent(child, parent)
 
     def selectChildren(self):
         selectionList = OpenMaya.MGlobal.getActiveSelectionList()
