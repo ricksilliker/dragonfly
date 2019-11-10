@@ -28,10 +28,12 @@ class ToolBoxWidget(QtWidgets.QWidget):
 
         generalToolsWidget = GeneralToolsWidget()
         jointToolsWidget = JointToolsWidget()
+        orientToolsWidget = OrientToolsWidget()
 
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(generalToolsWidget, generalToolsWidget.tabTitle)
         tabs.addTab(jointToolsWidget, jointToolsWidget.tabTitle)
+        tabs.addTab(orientToolsWidget, OrientToolsWidget.tabTitle)
         
         mainLayout = QtWidgets.QVBoxLayout(self)
         mainLayout.setAlignment(QtCore.Qt.AlignTop)
@@ -131,16 +133,6 @@ class GeneralToolsWidget(QtWidgets.QWidget):
             cmds.makeIdentity(dagPath.fullPathName(), a=True, t=True)
 
             nodeTransform.setTranslation(OpenMaya.MVector(pos), OpenMaya.MSpace.kWorld)
-
-            # cmds.move(
-            #     pos.x,
-            #     pos.y,
-            #     pos.z,
-            #     dagPath.fullPathName(),
-            #     ws=True,
-            #     a=True
-            # )
-
 
     def parentSelected(self):
         selectionList = OpenMaya.MGlobal.getActiveSelectionList()
@@ -385,3 +377,169 @@ class JointToolsWidget(QtWidgets.QWidget):
             sscPlug = depNode.findPlug('segmentScaleCompensate', False)
             currentValue = sscPlug.asBool()
             sscPlug.setBool(not(currentValue))
+
+
+class OrientToolsWidget(QtWidgets.QWidget):
+    tabTitle = 'Orient'
+    rotationOrders = ['XYZ', 'YZX', 'ZXY', 'XZY', 'YXZ', 'ZYX']
+
+    def __init__(self, parent=None):
+        super(OrientToolsWidget, self).__init__(parent=parent)
+
+        mainLayout = QtWidgets.QVBoxLayout(self)
+        mainLayout.setAlignment(QtCore.Qt.AlignTop)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+        mainLayout.setSpacing(0)
+
+        self.transformAttrsButton = QtWidgets.QPushButton('Toggle Transform Channels')
+        self.axisDisplayButton = QtWidgets.QPushButton('Toggle Axis Display')
+
+        mainLayout.addWidget(self.transformAttrsButton)
+        mainLayout.addWidget(self.axisDisplayButton)
+
+        self.addSeparator(mainLayout)
+
+        self.preserveTransformsCheck = QtWidgets.QCheckBox('Preserve Child Transforms')
+        self.preserveShapesCheck = QtWidgets.QCheckBox('Preserve Shapes')
+        self.incrementField = QtWidgets.QSpinBox()
+        self.incrementField.setValue(90)
+
+        mainLayout.addWidget(self.preserveTransformsCheck)
+        mainLayout.addWidget(self.preserveShapesCheck)
+        mainLayout.addWidget(self.incrementField)
+
+        gridLayout = QtWidgets.QGridLayout()
+        mainLayout.addLayout(gridLayout)
+        
+        self.negativeXRotateButton = QtWidgets.QPushButton('-X')
+        self.positiveXRotateButton = QtWidgets.QPushButton('X')
+        self.negativeYRotateButton = QtWidgets.QPushButton('-Y')
+        self.positiveYRotateButton = QtWidgets.QPushButton('Y')
+        self.negativeZRotateButton = QtWidgets.QPushButton('-Z')
+        self.positiveZRotateButton = QtWidgets.QPushButton('Z')
+
+        gridLayout.addWidget(self.negativeXRotateButton, 0, 0, 1, 1)
+        gridLayout.addWidget(self.positiveXRotateButton, 1, 0, 1, 1)
+        gridLayout.addWidget(self.negativeYRotateButton, 0, 1, 1, 1)
+        gridLayout.addWidget(self.positiveYRotateButton, 1, 1, 1, 1)
+        gridLayout.addWidget(self.negativeZRotateButton, 0, 2, 1, 1)
+        gridLayout.addWidget(self.positiveZRotateButton, 1, 2, 1, 1)
+
+        self.addSeparator(mainLayout)
+
+        self.includeChildrenCheck = QtWidgets.QCheckBox('Include Children')
+        self.setRotateOrderBox = QtWidgets.QComboBox()
+        self.setRotateOrderBox.addItems(self.rotationOrders)
+        self.packRotationButton = QtWidgets.QPushButton('Pack Rotation')
+        self.orientToWorldButton = QtWidgets.QPushButton('Orient To World')
+
+        mainLayout.addWidget(self.includeChildrenCheck)
+        mainLayout.addWidget(self.setRotateOrderBox)
+        mainLayout.addWidget(self.packRotationButton)
+        mainLayout.addWidget(self.orientToWorldButton)
+
+        self.setRotateOrderBox.activated.connect(self.setRotateOrder)
+        self.transformAttrsButton.clicked.connect(self.toggleTransformAttrs)
+        self.axisDisplayButton.clicked.connect(self.toggleLocalAxis)
+        self.negativeXRotateButton.clicked.connect(lambda x=(-1, 0, 0): self.incrementalRotate(x))
+        self.positiveXRotateButton.clicked.connect(lambda x=(1, 0, 0): self.incrementalRotate(x))
+        self.negativeYRotateButton.clicked.connect(lambda x=(0, -1, 0): self.incrementalRotate(x))
+        self.positiveYRotateButton.clicked.connect(lambda x=(0, 1, 0): self.incrementalRotate(x))
+        self.negativeZRotateButton.clicked.connect(lambda x=(0, 0, -1): self.incrementalRotate(x))
+        self.positiveZRotateButton.clicked.connect(lambda x=(0, 0, 1): self.incrementalRotate(x))
+        self.packRotationButton.clicked.connect(self.packRotation)
+
+    def addSeparator(self, layout):
+        frame = QtWidgets.QFrame()
+        frame.setFrameShape(QtWidgets.QFrame.HLine)
+        frame.setFrameShadow(QtWidgets.QFrame.Sunken)
+
+        layout.addWidget(QtWidgets.QWidget())
+        layout.addWidget(frame)
+
+    def packRotation(self):
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+        preserveChildren = self.preserveTransformsCheck.isChecked()
+
+        for i in range(selectionList.length()):
+            depNode = selectionList.getDependNode(i)
+            joints.packRotation(depNode, preserveChildren)
+
+    def incrementalRotate(self, axisVector):
+        degrees = self.incrementField.value()
+
+        axis = OpenMaya.MVector(*axisVector)
+        axis *= degrees
+
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+
+        for i in range(selectionList.length()):
+            depNode = selectionList.getDependNode(i)
+            nodeName = OpenMaya.MFnDagNode(depNode).fullPathName()
+            cmds.rotate(axis[0], axis[1], axis[2], nodeName, r=True, os=True)
+
+    def toggleLocalAxis(self):
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+        nodeNames = selectionList.getSelectionStrings()
+
+        for nodeName in nodeNames:
+            val = cmds.getAttr('{0}.dla'.format(nodeName))
+            cmds.setAttr('{0}.dla'.format(nodeName), not(val))
+
+    def toggleTransformAttrs(self):
+        attrs = [
+            # rotate order
+            'ro',
+            # rotate axis
+            'rax', 'ray', 'raz',
+            # rotate pivot
+            'rpx', 'rpy', 'rpz',
+            # scale pivot
+            'spx', 'spy', 'spz',
+            # rotate pivot translate
+            'rptx', 'rpty', 'rptz',
+            # scale pivot translate
+            'sptx', 'spty', 'sptz',
+        ]
+        
+        jointAttrs = [
+            # joint orient
+            'jox', 'joy', 'joz',
+        ]
+
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+        nodeNames = selectionList.getSelectionStrings()
+
+        for nodeName in nodeNames:
+            for attr in attrs:
+                attrName = '{0}.{1}'.format(nodeName, attr)
+                cb = cmds.getAttr(attrName, cb=True)
+                cmds.setAttr(attrName, cb=not(cb))
+            
+            for attr in jointAttrs:
+                if cmds.attributeQuery(attr, node=nodeName, exists=True):
+                    attrName = '{0}.{1}'.format(nodeName, attr)
+                    cmds.setAttr(attrName, cb=not(cb))
+
+    def setRotateOrder(self, index):
+        index = self.setRotateOrderBox.currentIndex()
+
+        selectionList = OpenMaya.MGlobal.getActiveSelectionList()
+
+        for i in range(selectionList.length()):
+            mObject = selectionList.getDependNode(i)
+
+            if not mObject.hasFn(OpenMaya.MFn.kTransform):
+                continue
+
+            nodes = [mObject]
+            
+            if self.includeChildrenCheck.isChecked():
+                nodes.extend(transforms.getAllChildTransforms(mObject))
+
+            for node in nodes:
+                depNode = OpenMaya.MFnDependencyNode(node)
+                sscPlug = depNode.findPlug('rotateOrder', False)
+                sscPlug.setInt(index)
+            
+            
