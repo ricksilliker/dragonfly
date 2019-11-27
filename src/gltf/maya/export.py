@@ -3,11 +3,12 @@ import logging
 from maya.api import OpenMaya
 
 import utils
+from gltf.interface import scene, node, gltf
 
 
 
 
-class ExportNodeMap(object):
+class ExportContext(object):
     """
     Schema:
         <nodeName>:
@@ -21,10 +22,32 @@ class ExportNodeMap(object):
     """
 
     def __init__(self):
-        pass
+        self._gltf = gltf.GLTF()
+
+    def addNode(self, name, localMatrix):
+
+
 
 
 def exportSelection():
+    hierarchy = getExportContext(selection=True)
+
+    ctx = gltf.GLTF()
+    ctx.scenes.append(scene.Scene())
+    ctx.scenes[0].name = utils.getSceneName()
+
+    for nodeName, nodeData in hierarchy.items():
+        n = node.Node()
+        n.name = nodeName.split('|')[-1]
+        n.matrix = utils.getLocalMatrix(nodeData['object'])
+        ctx.nodes.append(n)
+        nodeIndex = len(ctx.nodes) - 1
+        if 'parent' not in nodeData:
+            ctx.scenes[0].nodes.append(nodeIndex)
+
+
+
+def getExportContext(selection=True):
     """Select a transform object to export.
     
     Exports the related hierarchy, along with associated materials,
@@ -109,3 +132,4 @@ def exportSelection():
                         hierarchyMap[jointFullName]['object'] = joint
 
     logger.info(hierarchyMap)
+    return hierarchyMap

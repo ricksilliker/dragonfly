@@ -30,8 +30,12 @@ class GLTF(object):
     def toGLTF(self):
         result = {}
 
+        result['asset'] = self.asset.gltf
         result['scene'] = self.scene
         result['scenes'] = [s.gltf for s in self.scenes]
+        result['nodes'] = [n.gltf for n in self.nodes]
+
+        return result
 
     def serialized(self):
         return json.dumps(self.toGLTF(), indent=4, separators=(',', ' : '), allow_nan=False)

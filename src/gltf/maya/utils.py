@@ -101,3 +101,7 @@ def isIntermediateObject(node):
     ioPlug = depNode.findPlug('intermediateObject', False)
     
     return ioPlug.asBool()
+
+
+def getSceneName():
+    return cmds.file(q=True, sn=True, shn=True)

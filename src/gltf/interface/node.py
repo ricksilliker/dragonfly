@@ -1,6 +1,9 @@
 IDENTITY_MATRIX = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]
 
 class Node(object):
+    fields = ['camera', 'children', 'skin', 'mesh', 'matrix', 'translation', 'rotation', 'scale', 'weights', 'name', 'extensions', 'extras']
+    requiredFields = []
+
     def __init__(self):
         # int >= 0
         self.camera = None
