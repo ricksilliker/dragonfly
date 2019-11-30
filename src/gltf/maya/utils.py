@@ -1,3 +1,4 @@
+from maya import cmds
 from maya.api import OpenMaya, OpenMayaAnim
 
 
@@ -17,10 +18,20 @@ def getChildren(node, recursive=True):
     return result
 
 
-def getSelection():
+def getSelection(asDagPath=False):
     selectionList = OpenMaya.MGlobal.getActiveSelectionList()
     for i in range(selectionList.length()):
-        yield selectionList.getDependNode(i)
+        if asDagPath:
+            yield selectionList.getDagPath(i)
+        else:
+            yield selectionList.getDependNode(i)
+
+
+def getMObject(nodeName):
+    selectionList = OpenMaya.MSelectionList()
+    selectionList.add(nodeName)
+
+    return selectionList.getDependNode(0)
 
 
 def getNodePath(node):
@@ -105,3 +116,15 @@ def isIntermediateObject(node):
 
 def getSceneName():
     return cmds.file(q=True, sn=True, shn=True)
+
+
+def getLocalMatrix(node):
+    if not node.hasFn(OpenMaya.MFn.kTransform):
+        return
+
+    depNode = OpenMaya.MFnDependencyNode(node)
+    localMatrixPlug = depNode.findPlug('matrix', False)
+    matrixAttrMObject = localMatrixPlug.asMObject()
+    matrixData = OpenMaya.MFnMatrixData(matrixAttrMObject)
+
+    return matrixData.matrix()
