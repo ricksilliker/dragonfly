@@ -45,14 +45,9 @@ class GLTF(object):
         result['nodes'] = [n.gltf for n in self.nodes]
         result['meshes'] = [m.gltf for m in self.meshes]
 
-        print result['meshes']
-
         for m in result['meshes']:
-            print m
             for i, p in enumerate(m['primitives']):
                 m['primitives'][i] = p.gltf
-
-        print result
 
         return result
 
@@ -100,7 +95,69 @@ class GLTF(object):
             with io.open(binFilePath, 'wb') as fp:
                 fp.write(buff.data)
 
+    @staticmethod
+    def importGLTF(inputDirectory):
+        logger = logging.getLogger(__name__)
 
+        bufferFiles = []
+        gltfFiles = []
+
+        for f in os.listdir(inputDirectory):
+            if f.endswith('.gltf'):
+                gltfFiles.append(os.path.join(inputDirectory, f))
+            elif f.endswith('.bin'):
+                bufferFiles.append(os.path.join(inputDirectory, f))
+
+        if not bufferFiles:
+            logger.exception('Missing associated binary data for asset.')
+            return
+
+        if not gltfFiles:
+            logger.exception('Missing associated gltf description for asset.')
+            return
+
+        if len(gltfFiles) > 1:
+            logger.exception('Too many gltf files.')
+            return
+
+        with open(gltfFiles[0], 'r') as fp:
+            gltfDescription = json.load(fp)
+        
+        # TODO: Check for empty description file.
+
+        gltfObject = GLTF()
+
+        gltfObject.asset = Asset.fromData(**gltfDescription['asset'])
+
+        for index, buffer in enumerate(gltfDescription['buffers']):
+            for buffFile in bufferFiles:
+                if buffer['uri'] in buffFile:
+                    buffer['directory'] = os.path.dirname(buffFile)
+                    break
+            buffer['index'] = index
+            gltfObject.buffers.append(Buffer.fromData(**buffer))
+
+        for bufferView in gltfDescription['bufferViews']:
+            gltfObject.bufferViews.append(BufferView.fromData(**bufferView))        
+
+        for accessor in gltfDescription['accessors']:
+            gltfObject.accessors.append(Accessor.fromData(**accessor))
+
+        for scene in gltfDescription['scenes']:
+            gltfObject.scenes.append(Scene.fromData(**scene))
+
+        for node in gltfDescription['nodes']:
+            gltfObject.nodes.append(Node.fromData(**node))
+
+        for mesh in gltfDescription['meshes']:
+            m = Mesh.fromData(**mesh)
+            for index, primitive in enumerate(m.primitives):
+                m.primitives[index] = Primitive.fromData(**primitive)
+            gltfObject.meshes.append(m)
+
+        return gltfObject
+
+        
 class Asset(core.GLTFSpecObject):
     fields = ['copyright', 'version', 'minVersion', 'generator', 'extensions', 'extras']
     requiredFields = ['version']
@@ -189,6 +246,19 @@ class Buffer(core.GLTFSpecObject):
             self.uri = 'out.bin'
 
         return super(Buffer, self).gltf
+
+    @classmethod
+    def fromData(cls, **kwargs):
+        _instance = super(Buffer, cls).fromData(**kwargs)
+
+        if 'directory' in kwargs:
+            with open(os.path.join(kwargs['directory'], _instance.uri), 'rb') as fp:
+                _instance._data = fp.read()
+
+        if 'index' in kwargs:
+            _instance._bufferIndex = kwargs['index']
+
+        return _instance
 
     def getByteLength(self):
         return len(self._data)

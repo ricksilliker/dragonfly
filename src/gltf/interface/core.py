@@ -71,3 +71,13 @@ class GLTFSpecObject(object):
                 logger.exception('Field is required for glTF {0}: {1}'.format(self.__name__, field))
 
         return result
+
+    @classmethod
+    def fromData(cls, **kwargs):
+        _instance = cls()
+
+        for key, value in kwargs.items():
+            if key in _instance.fields:
+                setattr(_instance, key, value)
+
+        return _instance

@@ -42,8 +42,6 @@ def exportSelection(exportContext=None):
     getExportForTransforms(ctx)
     getExportForMeshes(ctx)
 
-    # logger.info(ctx.serialized())
-
     gltf.GLTF.exportGLTF(ctx, '/Users/ricksilliker/Desktop/testAsset')
         
 
@@ -116,6 +114,10 @@ def getGLTFMesh(ctx, nodeIndex):
         n.mesh = len(ctx.meshes) - 1
         
         for meshMObject in meshes:
+            # Skip meshes that are deformer source nodes.
+            if utils.isIntermediateObject(meshMObject):
+                continue
+
             prim = gltf.Primitive()
             prim.attributes = {}
             m.primitives.append(prim)
@@ -144,10 +146,6 @@ def getGLTFMesh(ctx, nodeIndex):
             indicesAccessor.count = len(indices)
             indicesAccessor.min = [min(indices)]
             indicesAccessor.max = [max(indices)]
-
-            print 'indices info'
-            print triVertIds
-            print indices
 
             buffData = gltf.Primitive.indicesToBytes(indices)
 
