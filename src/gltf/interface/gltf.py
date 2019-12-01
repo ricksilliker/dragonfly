@@ -2,6 +2,8 @@ import array
 import logging
 import json
 import base64
+import os
+import io
 
 import core
 
@@ -28,13 +30,29 @@ class GLTF(object):
         self.extensionsUsed = []
         self.extensionsRequired = []
     
+    def __repr__(self):
+        return self.serialized()
+
     def toGLTF(self):
         result = {}
 
         result['asset'] = self.asset.gltf
+        result['accessors'] = [a.gltf for a in self.accessors]
+        result['bufferViews'] = [b.gltf for b in self.bufferViews]
+        result['buffers'] = [b.gltf for b in self.buffers]
         result['scene'] = self.scene
         result['scenes'] = [s.gltf for s in self.scenes]
         result['nodes'] = [n.gltf for n in self.nodes]
+        result['meshes'] = [m.gltf for m in self.meshes]
+
+        print result['meshes']
+
+        for m in result['meshes']:
+            print m
+            for i, p in enumerate(m['primitives']):
+                m['primitives'][i] = p.gltf
+
+        print result
 
         return result
 
@@ -64,18 +82,22 @@ class GLTF(object):
 
         logger.info('Component type: {0}'.format(componentType))
 
-        return array.array(componentType, lst).tobytes()
+        return array.array(componentType, lst).tostring()
 
     @staticmethod
     def exportGLTF(gltfObject, outputDirectory):
-        gltfFilePath = os.path.abspath(os.path.join(outputDirectory, 'out.gltf'))
-        with open(gltfFilePath, 'w', encoding='utf8', newline='\n') as fp:
-            file.write(gltfObject.serialized())
-            file.write("\n")
 
-        for buff in gltfObjects.buffers:
+        if not os.path.exists(os.path.abspath(outputDirectory)):
+            os.makedirs(os.path.abspath(outputDirectory), 0755)
+
+        gltfFilePath = os.path.abspath(os.path.join(outputDirectory, 'out.gltf'))
+        with io.open(gltfFilePath, mode='w+', encoding='utf8', newline='\n') as fp:
+            fp.write(unicode(gltfObject.serialized()))
+            fp.write(unicode("\n"))
+
+        for buff in gltfObject.buffers:
             binFilePath = os.path.abspath(os.path.join(outputDirectory, buff.name))
-            with open(binFilePath, 'wb') as fp:
+            with io.open(binFilePath, 'wb') as fp:
                 fp.write(buff.data)
 
 
@@ -138,6 +160,9 @@ class Accessor(core.GLTFSpecObject):
 
 
 class Buffer(core.GLTFSpecObject):
+    fields = ['uri', 'byteLength', 'name', 'extensions', 'extras']
+    requiredFields = ['byteLength']
+
     def __init__(self, bufferIndex=0):
         # str
         self.uri = None
@@ -153,6 +178,18 @@ class Buffer(core.GLTFSpecObject):
         self._data = b''
         self._bufferIndex = bufferIndex
 
+    @property
+    def gltf(self):
+        self.byteLength = self.getByteLength()
+        
+        if self.name is None:
+            self.name = 'out.bin'
+        
+        if self.uri is None:
+            self.uri = 'out.bin'
+
+        return super(Buffer, self).gltf
+
     def getByteLength(self):
         return len(self._data)
 
@@ -160,12 +197,19 @@ class Buffer(core.GLTFSpecObject):
     def data(self):
         return self._data
 
+    @data.setter
+    def data(self, value):
+        self._data = value
+
     @property
     def index(self):
         return self._bufferIndex
 
 
-class BufferView(object):
+class BufferView(core.GLTFSpecObject):
+    fields = ['buffer', 'byteOffset', 'byteLength', 'byteStride', 'target', 'name', 'extensions', 'extras']
+    requiredFields = ['buffer', 'byteLength']
+
     def __init__(self):
         # int >= 0
         self.buffer = 0  # required
@@ -193,17 +237,14 @@ class BufferView(object):
             raise TypeError('buffer must be of type {0}'.format(buffer.Buffer))
 
         buffView = BufferView()
-
-        byteOffset = len(buffer.data)
-        buffView.byteOffset = offset
+        buffView.buffer = buffer.index
+        buffView.byteLength = len(binaryData)
+        buffView.byteOffset = len(buffer.data)
 
         buffer.data += binaryData
 
         padding = (4 - (len(binaryData) % 4)) % 4
         buffer.data += b'\x00' * padding
-
-        buffView.buffer = buffer.index
-        buffView.byteLength = len(binaryData)
 
         return buffView
 
@@ -253,6 +294,14 @@ class Node(core.GLTFSpecObject):
         # any
         self.extras = None
 
+    @property
+    def gltf(self):
+        # Clean up matrix attributes if there is no transformation.
+        if self.matrix is not None:
+            if self.matrix == core.IDENTITY_MATRIX:
+                self.matrix = None
+
+        return super(Node, self).gltf
 
 class Mesh(core.GLTFSpecObject):
     fields = ['primitives', 'weights', 'name', 'extensions', 'extras']
@@ -292,19 +341,42 @@ class Primitive(core.GLTFSpecObject):
         self.extras = None
 
     @staticmethod
-    def indicesToBytes(data):
-        if max(data) < 255:
-            typ = core.COMPONENT_TYPE_BYTE
-        elif max(data) < 65535:
+    def getIndicesComponentType(indicesList):
+        logger = logging.getLogger(__name__)
+
+        if not isinstance(indicesList, (list, tuple)):    
+            logger.exception('This method only excepts list type arguments.')
+            return 0
+
+        if max(indicesList) < 255:
+            typ = core.COMPONENT_TYPE_UNSIGNED_BYTE
+        elif max(indicesList) < 65535:
             typ = core.COMPONENT_TYPE_UNSIGNED_SHORT
-        elif max(data) < 4294967295:
+        elif max(indicesList) < 4294967295:
             typ = core.COMPONENT_TYPE_UNSIGNED_INT
         else:
-            return 
+            logger.exception('Could not match to a component type.')
+            return 0
+        
+        return typ
+
+    @staticmethod
+    def indicesToBytes(data):
+        if not isinstance(data, (list, tuple)):
+            logger = logging.getLogger(__name__)
+            logger.exception('This method only excepts list type arguments.')
+            return ''
+
+        typ = Primitive.getIndicesComponentType(data)
 
         # return struct.pack(typ, data)
-        return array.array(core.COMPONENT_TYPE_CODES[typ], data).tobytes()
+        return array.array(core.COMPONENT_TYPE_CODES[typ], data).tostring()
         
     @staticmethod
     def positionsToBytes(data):
-        return array.array(core.COMPONENT_TYPE_CODES[core.COMPONENT_TYPE_FLOAT], data).tobytes()
+        if not isinstance(data, (list, tuple)):
+            logger = logging.getLogger(__name__)
+            logger.exception('This method only excepts list type arguments.')
+            return ''
+
+        return array.array(core.COMPONENT_TYPE_CODES[core.COMPONENT_TYPE_FLOAT], data).tostring()

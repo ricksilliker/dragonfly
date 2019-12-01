@@ -55,8 +55,8 @@ class GLTFSpecObject(object):
     def __init__(self):
         pass
 
-    def __repr__(self):
-        return json.dumps(self.gltf)
+    # def __repr__(self):
+    #     return json.dumps(self.gltf)
 
     @property
     def gltf(self):

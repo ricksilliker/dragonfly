@@ -27,15 +27,24 @@ class ExportContext(object):
 def exportSelection(exportContext=None):
     # hierarchy = getExportContext(selection=True)
 
+    logger = logging.getLogger(__name__)
+
     ctx = gltf.GLTF()
+
+    ctx.asset = gltf.Asset()
 
     ctx.buffers.append(gltf.Buffer())
 
     ctx.scenes.append(gltf.Scene())
+    ctx.scenes[0].nodes = []
     ctx.scenes[0].name = utils.getSceneName()
 
     getExportForTransforms(ctx)
     getExportForMeshes(ctx)
+
+    # logger.info(ctx.serialized())
+
+    gltf.GLTF.exportGLTF(ctx, '/Users/ricksilliker/Desktop/testAsset')
         
 
 def getExportForTransforms(gltfContext):
@@ -47,20 +56,20 @@ def getExportForTransforms(gltfContext):
             transforms.append(n)
 
     result = []
-    getGLTFNodes(transforms, result)
+    getGLTFNodes(gltfContext, transforms, result)
 
     gltfContext.nodes = result
 
-    logger.info(result)
+    # logger.info(result)
 
 
-def getGLTFNodes(nodes, nodeList, parentIndex=None):
+def getGLTFNodes(ctx, nodes, nodeList, parentIndex=None):
     for n in nodes:
-        nodeIndex = getGLTFNode(n, nodeList, parentIndex)
-        getGLTFNodes(utils.getChildren(n), nodeList, nodeIndex)
+        nodeIndex = getGLTFNode(ctx, n, nodeList, parentIndex)
+        getGLTFNodes(ctx, utils.getChildren(n), nodeList, nodeIndex)
 
 
-def getGLTFNode(mobject, nodeList, parentIndex=None):
+def getGLTFNode(ctx, mobject, nodeList, parentIndex=None):
     dagNode = OpenMaya.MFnDagNode(mobject)
 
     n = gltf.Node()
@@ -76,6 +85,8 @@ def getGLTFNode(mobject, nodeList, parentIndex=None):
         if parentNode.children is None:
             parentNode.children = []
         parentNode.children.append(nodeIndex)
+    else:
+        ctx.scenes[0].nodes.append(nodeIndex)
 
     return nodeIndex
 
@@ -83,15 +94,11 @@ def getGLTFNode(mobject, nodeList, parentIndex=None):
 def getExportForMeshes(gltfContext):
     logger = logging.getLogger(__name__)
 
-    meshes = []
-
     for nodeIndex, gltfNode in enumerate(gltfContext.nodes):
         nodeMObject = utils.getMObject(gltfNode.name)
         meshIndex = getGLTFMesh(gltfContext, nodeIndex)
 
-    gltfContext.meshes = meshes
-
-    logger.info(gltfContext)
+    # logger.info(gltfContext)
 
 
 def getGLTFMesh(ctx, nodeIndex):
@@ -102,30 +109,48 @@ def getGLTFMesh(ctx, nodeIndex):
     meshes = utils.getMesh(nodeMObject)
     if meshes:
         m = gltf.Mesh()
+        m.primitives = []
+
         ctx.meshes.append(m)
         
         n.mesh = len(ctx.meshes) - 1
         
-        m.primitives = []
-        
         for meshMObject in meshes:
             prim = gltf.Primitive()
+            prim.attributes = {}
             m.primitives.append(prim)
 
             meshFn = OpenMaya.MFnMesh(meshMObject)
 
-            # mesh indices accessor
             vertCount = meshFn.numVertices
-            indices = [x for x in range(vertCount)]
-            
+            vertArray = [x for x in range(vertCount)]
+
+            triCorrelation, triVertIds = meshFn.getTriangles()
+            triCount = 0
+            for t in triCorrelation:
+                triCount += t
+            indices = [x for x in range(triCount * 3)]
+
+            mpoints = [meshFn.getPoint(i) for i in triVertIds]
+            positions = []
+            for index in indices:
+                pt = mpoints[index]
+                positions.extend([pt.x, pt.y, pt.z])
+
+            # mesh indices accessor            
             indicesAccessor = gltf.Accessor()
             indicesAccessor.type = "SCALAR"
-            indicesAccessor.componentType = core.COMPONENT_TYPE_UNSIGNED_SHORT
-            indicesAccessor.count = vertCount
+            indicesAccessor.componentType = gltf.Primitive.getIndicesComponentType(indices)
+            indicesAccessor.count = len(indices)
             indicesAccessor.min = [min(indices)]
             indicesAccessor.max = [max(indices)]
 
+            print 'indices info'
+            print triVertIds
+            print indices
+
             buffData = gltf.Primitive.indicesToBytes(indices)
+
             buffView = gltf.BufferView.addBufferView(buff, buffData)
             ctx.bufferViews.append(buffView)
 
@@ -133,26 +158,25 @@ def getGLTFMesh(ctx, nodeIndex):
 
             ctx.accessors.append(indicesAccessor)
 
+            prim.indices = len(ctx.accessors) - 1
+
             # mesh prim position accessor
             positionAccessor = gltf.Accessor()
             positionAccessor.type = "VEC3"
             positionAccessor.componentType = core.COMPONENT_TYPE_FLOAT
 
-            triCorrelation, triVertIds = meshFn.getTriangles()
-            mpoints = [meshFn.getPoint(i) for i in triVertIds]
-            positions = []
-            for pt in mpoints:
-                positions.extend([pt.x, pt.y, pt.z])
+            positionAccessor.count = len(indices)
 
-            positionAccessor.count = len(triCorrelation)
-
-            positionAccessor.min = [math.inf] * 3
-            positionAccessor.max = [-math.inf] * 3
+            positionAccessor.min = [float('inf') for i in range(3)]
+            positionAccessor.max = [-float('inf') for i in range(3)]
 
             for pt in mpoints:
                 for i, c in enumerate(pt):
+                    if i > 2:
+                        continue
+
                     positionAccessor.min[i] = min(positionAccessor.min[i], c)
-                    positionAccessor.max[i] = min(positionAccessor.max[i], c)
+                    positionAccessor.max[i] = max(positionAccessor.max[i], c)
 
             buffData = gltf.Primitive.positionsToBytes(positions)
             buffView = gltf.BufferView.addBufferView(buff, buffData)
@@ -161,6 +185,8 @@ def getGLTFMesh(ctx, nodeIndex):
             positionAccessor.bufferView = len(ctx.bufferViews) - 1
 
             ctx.accessors.append(positionAccessor)
+
+            prim.attributes['POSITION'] = len(ctx.accessors) - 1
 
 
             
